@@ -8,10 +8,8 @@ connectDB();
 
 app.use(express.json());
 
-// // Define Routes
 app.use('/', require('./routes/index'));
-app.use('/api/v1', require('./routes/url'));
 
-const PORT = 5000;
+const PORT = 5005;
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
