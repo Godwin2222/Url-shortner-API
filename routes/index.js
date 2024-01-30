@@ -1,6 +1,7 @@
 // const express = require('express');
 // const router = express.Router();
 
+<<<<<<< HEAD
 // const Url = require('../models/Url');
 
 // // @route     GET /:code
@@ -38,3 +39,12 @@
 
 
 // module.exports = router;
+=======
+// @route     GET /:code
+// @desc      Redirect to long/original URL
+router.get('/urls', async (req, res) => {
+  res.send('Hello World!');
+});
+
+module.exports = router;
+>>>>>>> d8284b695d99c87451e0b3ca40078bab47d9aac9
