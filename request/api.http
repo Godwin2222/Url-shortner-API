@@ -1,0 +1,7 @@
+POST http://localhost:5000/api/v1/shorten
+Content-Type: application/json
+
+{
+  "originalUrl": "https://stackoverflow.com/questions/37280274/syntaxerror-unexpected-token-in-json-at-position-0",
+  "customName": "Dr meows a lot"
+}
