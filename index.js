@@ -1,8 +1,8 @@
 const express = require('express');
 const connectDB = require('./config/db');
-const validator = require('validator');
-const shortid = require('shortid');
 const config = require('config');
+const nanoid = require('nanoid');
+
 
 const Url = require('./models/Url');
 const { listen } = require('express/lib/application');
@@ -19,107 +19,246 @@ app.use(express.json());
 // @desc      Create short URL
 
 app.post('/api/v1/shorten', async (req, res) => {
-    let { customName , originalUrl } = req.body;
-    const baseUrl = config.get('baseUrl');
-  
-    let shortUrl;
-     // If customName is provided, validate it
-     if (customName && validator.isLength(customName, { min: 5 })) {
-        // Check if customName already exists
-        const existingCustomName = await Url.findOne({ customName });
-          if (existingCustomName) {
-            return res.status(400).json({ error: 'Custom name already in use' });
-          }
+  try {
+    const { url, customName } = req.body;
 
-    try {
-          // Create url code
-          const urlCode = shortid.generate();
-   
-        // Check original Url
-        if (validator.isURL(originalUrl)) {
-          
-            let url = await Url.findOne({ originalUrl });
-  
-            if (url) {
-              return res.json({
-                  message: 'url already exists',
-                  url,
-                });
-
-            } else {
-              shortUrl = customName
-              ? baseUrl + '/' + customName.replace(/\s+/g, '-')
-              : baseUrl + '/' + urlCode;
-            }
-          } else {
-            res.status(401).json('Invalid originalUrl');
-          }
-          customName = customName.replace(/\s+/g, '-')  
-        url = new Url({
-          originalUrl,
-          shortUrl,
-          customName,
-          urlCode,
-          date: new Date()
-        });
-  
-        await url.save();
-        
-  
-        return res.json({
-          message: 'URL shortened successfully',
-          data: {
-            shortUrl,
-          },
-        });
-
-        
-      } catch (err) {
-    console.error(err);
-    res.status(500).json('Server error');
-  }     
-  }});
-  
-  // @route     GET /:name
-// @desc      Redirect to long/original URL
-  
-  app.get('/:name', async (req, res) => {
- 
-    try {
-      const url = await Url.findOne({ customName: req.params.name });
-  
-      if (url) {
-        return res.redirect(url.originalUrl);
-      } else {
-        return res.status(404).json('No url found');
-      }
-    } catch (err) {
-      console.error(err);
-      res.status(500).json('Server error');
+    // Validate longUrl
+    if (!url) {
+      return res.status(400).json({ error: 'Please provide a valid long URL.' });
     }
-  });
 
-// @route     GET /:code
-// @desc      Redirect to long/original URL
-  
-  app.get('/:code', async (req, res) => {
-    try {
-      const url = await Url.findOne({ urlCode: req.params.code });
-  
-      if (url) {
-        return res.redirect(url.originalUrl);
-      } else {
-        return res.status(404).json('No url found');
-      }
-    } catch (err) {
-      console.error(err);
-      res.status(500).json('Server error');
+    let existingURL;
+
+    // Check if longUrl already exists
+    existingURL = await Url.findOne({ originalUrl: url });
+    if (existingURL) {
+      return res.json({
+        message: 'URL already exists',
+        data: {
+          shortUrl: existingURL.shortUrl,
+        },
+      });
     }
-  });
 
-// // Define Routes
-// app.use('/', require('./routes/index'));
-// app.use('/api/v1', require('./routes/url'));
+    // Validate customName if provided
+    if (customName) {
+      if (customName.length < 5) {
+        return res.status(400).json({ error: 'Custom name must be at least 5 characters long.' });
+      }
+
+      const formattedCustomName = customName.replace(/\s+/g, '-'); // Replace spaces with dashes
+      existingURL = await Url.findOne({ customName: formattedCustomName });
+
+      if (existingURL) {
+        return res.status(400).json({ error: 'Custom name already exists.' });
+      }
+
+      const newShortenedURL = new ShortenedURL({
+        customName: formattedCustomName,
+        shortUrl: `https://shortit/${formattedCustomName}`,
+        originalUrl: url,
+      });
+
+      await newShortenedURL.save();
+
+      return res.json({
+        message: 'URL shortened successfully',
+        data: {
+          shortUrl: newShortenedURL.shortUrl,
+        },
+      });
+    }
+
+    // Generate random shortUrl
+    const randomShortUrl = nanoid(5);
+    existingURL = await Url.findOne({ shortUrl: randomShortUrl });
+
+    // Ensure random shortUrl is unique
+    while (existingURL) {
+      randomShortUrl = nanoid(5);
+      existingURL = await Url.findOne({ shortUrl: randomShortUrl });
+    }
+
+    const newShortenedURL = new ShortenedURL({
+      shortUrl: `https://shortit/${randomShortUrl}`,
+      originalUrl: url,
+    });
+
+    await newShortenedURL.save();
+
+    return res.json({
+      message: 'URL shortened successfully',
+      data: {
+        shortUrl: newShortenedURL.shortUrl,
+      },
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+  
+ // @route     GET /api/v1/urls
+// @desc      get all urls
+
+app.get('/api/v1/urls', async (req, res) => {
+  try {
+    const allURLs = await Url.find({}, '-_id -__v'); // Exclude _id and __v fields
+    if (allURLs.length === 0) {
+      return res.json([]);
+    }
+
+    const formattedURLs = allURLs.map((url) => ({
+      id: url.id,
+      customName: url.customName,
+      originalUrl: url.originalUrl,
+      shortUrl: url.shortUrl,
+      createdAt: url.createdAt.toISOString(),
+    }));
+
+    return res.json(formattedURLs);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+ // @route     GET /api/v1/urls/:id
+// @desc      get single url
+
+app.get('/api/v1/urls/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ error: 'Invalid ID format.' });
+    }
+
+    const url = await Url.findById(id, '-_id -__v'); // Exclude _id and __v fields
+
+    if (!url) {
+      return res.status(404).json({ error: 'URL not found.' });
+    }
+
+    const formattedURL = {
+      id: url.id,
+      customName: url.customName,
+      originalUrl: url.originalUrl,
+      shortUrl: url.shortUrl,
+      createdAt: url.createdAt.toISOString(),
+    };
+
+    return res.json(formattedURL);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+// @route     PUT /api/v1/urls/:id
+// @desc      update a single URL
+
+app.put('/api/v1/urls/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { customName, url } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ error: 'Invalid ID format.' });
+    }
+
+    const existingURL = await Url.findById(id);
+
+    if (!existingURL) {
+      return res.status(404).json({ error: 'URL not found.' });
+    }
+
+    // Update customName and shortUrl if provided
+    if (customName) {
+      if (customName.length < 5) {
+        return res.status(400).json({ error: 'Custom name must be at least 5 characters long.' });
+      }
+
+      const formattedCustomName = customName.replace(/\s+/g, '-'); // Replace spaces with dashes
+
+      // Check if updated customName already exists
+      const duplicateURL = await Url.findOne({ customName: formattedCustomName, _id: { $ne: id } });
+
+      if (duplicateURL) {
+        return res.status(400).json({ error: 'Custom name already exists.' });
+      }
+
+      existingURL.customName = formattedCustomName;
+      existingURL.shortUrl = `https://shortit/${formattedCustomName}`;
+    }
+
+    // Update originalUrl if provided
+    if (url) {
+      // Validate the provided URL
+      // You can use a library like 'valid-url' for more comprehensive URL validation
+      if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        return res.status(400).json({ error: 'Invalid URL format.' });
+      }
+
+      existingURL.originalUrl = url;
+    }
+
+    await existingURL.save();
+
+    const updatedURL = {
+      id: existingURL.id,
+      customName: existingURL.customName,
+      originalUrl: existingURL.originalUrl,
+      shortUrl: existingURL.shortUrl,
+      createdAt: existingURL.createdAt.toISOString(),
+    };
+
+    return res.json({
+      message: 'URL updated successfully',
+      data: updatedURL,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+
+// @route     DELETE /api/v1/urls/:id
+// @desc      delete a single URL
+
+
+app.delete('/api/v1/urls/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ error: 'Invalid ID format.' });
+    }
+
+    const deletedURL = await Url.findByIdAndDelete(id);
+
+    if (!deletedURL) {
+      return res.status(404).json({ error: 'URL not found.' });
+    }
+
+    const deletedURLData = {
+      id: deletedURL.id,
+      customName: deletedURL.customName,
+      originalUrl: deletedURL.originalUrl,
+      shortUrl: deletedURL.shortUrl,
+      createdAt: deletedURL.createdAt.toISOString(),
+    };
+
+    return res.json({
+      message: 'URL deleted successfully',
+      data: deletedURLData,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
 
 const PORT = 5005;
 
